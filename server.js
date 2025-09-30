@@ -1,44 +1,91 @@
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const axios = require('axios');
+const cors = require('cors');
+const qs = require('qs');
 
-// Inisialisasi aplikasi Express
 const app = express();
 
-// Definisikan port di mana server proxy Anda akan berjalan
-const PORT = 31401;
+// --- Konfigurasi ---
+const PORT = 31401; // Port tempat proxy ini berjalan
+const TARGET_NODE = 'http://203.236.58.84:31401'; // Alamat server Horizon yang dituju
 
-// Definisikan URL API target yang ingin Anda teruskan permintaannya
-const API_TARGET_URL = 'http://14.241.120.142:31401';
+// --- Middleware ---
+app.use(cors());
+app.use(express.urlencoded({ extended: true })); // Untuk menerima form data (x-www-form-urlencoded)
+app.use(express.json()); // Untuk menerima JSON dari client
 
-// Konfigurasi untuk proxy
-const proxyOptions = {
-    target: API_TARGET_URL, // Alamat server tujuan
-    changeOrigin: true,     // Ini penting! Mengubah header 'Host' agar sesuai dengan target.
-                            // Diperlukan agar server tujuan menerima permintaan.
-    
-    // Opsi tambahan jika diperlukan (biasanya tidak perlu diubah)
-    onProxyReq: (proxyReq, req, res) => {
-        // Anda bisa memodifikasi request sebelum dikirim ke target di sini jika perlu
-        console.log(`[Proxy] Meneruskan request: ${req.method} ${req.originalUrl} -> ${API_TARGET_URL}${req.originalUrl}`);
-    },
-    onProxyRes: (proxyRes, req, res) => {
-        // Anda bisa memodifikasi response dari target sebelum dikirim kembali ke client
-        console.log(`[Proxy] Menerima response dengan status: ${proxyRes.statusCode}`);
-    },
-    onError: (err, req, res) => {
-        // Menangani error jika server target tidak bisa dihubungi
-        console.error('Proxy error:', err);
-        res.status(500).send('Proxy error: Tidak dapat terhubung ke server tujuan.');
+// --- Logic Reverse Proxy Utama ---
+app.use(async (req, res) => {
+  const targetUrl = TARGET_NODE + req.originalUrl;
+  const proxyBaseUrl = `${req.protocol}://${req.get('host')}`; // Misal: http://localhost:31401
+
+  console.log(`[PROXY] Meneruskan ${req.method} ${req.originalUrl} -> ${targetUrl}`);
+
+  try {
+    // 1. Menyiapkan dan meneruskan permintaan ke server target
+    const headers = { ...req.headers };
+    // Hapus header 'host' agar server target tidak bingung
+    delete headers.host;
+
+    let dataToSend;
+    // Stellar Horizon API (untuk submit transaksi) menggunakan 'Content-Type': 'application/x-www-form-urlencoded'
+    if (req.method === 'POST' && req.is('application/x-www-form-urlencoded')) {
+        // Jika sudah form-urlencoded, teruskan saja
+        dataToSend = qs.stringify(req.body); 
+    } else {
+        // Untuk GET, DELETE, atau JSON POST, teruskan body apa adanya
+        dataToSend = req.body;
     }
-};
 
-// Gunakan middleware proxy untuk SEMUA rute ('/')
-// Artinya, setiap request yang masuk ke server Anda (misal: /login, /getUsers, dll)
-// akan diteruskan ke server target.
-app.use('/', createProxyMiddleware(proxyOptions));
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
+      headers,
+      data: dataToSend,
+      // Penting: Cegah axios dari parsing JSON secara otomatis agar kita bisa memanipulasi string mentahnya
+      responseType: 'text',
+      transformResponse: [(data) => data],
+    });
 
-// Jalankan server pada port yang telah ditentukan
+    // 2. Memodifikasi respons sebelum mengirim ke klien
+    let responseBody = response.data;
+    const contentType = response.headers['content-type'];
+    
+    // Hanya modifikasi respons jika itu adalah JSON, untuk menghindari merusak file biner atau teks biasa
+    if (responseBody && contentType && contentType.includes('application/json')) {
+      // Ganti semua kemunculan URL target dengan URL proxy
+      const targetRegex = new RegExp(TARGET_NODE, 'g');
+      responseBody = responseBody.replace(targetRegex, proxyBaseUrl);
+      console.log(`[PROXY] Menulis ulang URL di respons JSON.`);
+    }
+
+    // 3. Mengirimkan respons yang sudah dimodifikasi kembali ke klien
+    // Salin semua header dari respons target (seperti Content-Type, dll)
+    Object.keys(response.headers).forEach((key) => {
+      res.setHeader(key, response.headers[key]);
+    });
+    
+    // Kirim status dan body yang sudah final
+    res.status(response.status).send(responseBody);
+
+  } catch (err) {
+    if (err.response) {
+      // Kesalahan dari server target (misalnya 404, 400)
+      console.error(`[PROXY ERROR] Target server merespons dengan status ${err.response.status}:`, err.response.data);
+      res.status(err.response.status).send(err.response.data);
+    } else if (err.request) {
+      // Kesalahan koneksi ke server target
+      console.error(`[PROXY ERROR] Tidak bisa terhubung ke ${targetUrl}:`, err.message);
+      res.status(502).send({ error: 'Bad Gateway', message: `Tidak dapat terhubung ke server target di ${TARGET_NODE}` });
+    } else {
+      // Kesalahan lain
+      console.error('[PROXY ERROR] Kesalahan internal:', err.message);
+      res.status(500).send({ error: 'Internal Server Error' });
+    }
+  }
+});
+
 app.listen(PORT, () => {
-    console.log(`Server Proxy berjalan di http://localhost:${PORT}`);
-    console.log(`Semua permintaan akan diteruskan ke ${API_TARGET_URL}`);
+  console.log(`Reverse proxy berjalan di http://localhost:${PORT}`);
+  console.log(`Meneruskan permintaan ke: ${TARGET_NODE}`);
 });
