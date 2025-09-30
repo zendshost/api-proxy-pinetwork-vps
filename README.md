@@ -8,6 +8,12 @@ apt install npm
 ______________________________________________
 git clone https://github.com/zendshost/api-proxy-pinetwork-vps.git
 ______________________________________________
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+______________________________________________
+source ~/.bashrc
+______________________________________________
+nvm install --lts
+______________________________________________
 cd api-proxy-pinetwork-vps
 ______________________________________________
 Langkah 3: Instalasi Library yang Dibutuhkan
