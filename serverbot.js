@@ -7,7 +7,7 @@ const app = express();
 
 // --- Konfigurasi ---
 const PORT = 31401; // Port tempat proxy ini berjalan
-const TARGET_NODE = 'http://221.144.51.60:31401'; // Alamat server Horizon yang dituju
+const TARGET_NODE = 'http://183.97.22.176:31401'; // Alamat server Horizon yang dituju
 
 // --- Konfigurasi Telegram ---
 const TELEGRAM_BOT_TOKEN = '7533580803:AAHzOk1fjnfwnwYwB-Gz63S-mYo1F5WoFk0';
