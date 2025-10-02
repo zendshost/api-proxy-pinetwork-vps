@@ -12,8 +12,8 @@ const TARGET_NODE = 'http://183.97.22.176:31401'; // Alamat server Horizon yang 
 // --- Konfigurasi Telegram ---
 // PERHATIAN: Anda sudah memasang token dan ID Anda di sini.
 // Sangat disarankan untuk mencabut token ini dan menggunakan yang baru dari @BotFather.
-const TELEGRAM_BOT_TOKEN = '7533580803:AAHzOk1fjnfwnwYwB-Gz63S-mYo1F5WoFk0';
-const TELEGRAM_CHAT_ID = '7890743177';
+const TELEGRAM_BOT_TOKEN = '7533580803:Axxxxxxxxx';
+const TELEGRAM_CHAT_ID = '7890xxxx';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
 
