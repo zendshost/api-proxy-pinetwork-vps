@@ -1,5 +1,5 @@
 const express = require('express');
-const axios =require('axios');
+const axios = require('axios');
 const cors = require('cors');
 const qs = require('qs');
 
@@ -10,8 +10,6 @@ const PORT = 31401; // Port tempat proxy ini berjalan
 const TARGET_NODE = 'http://183.97.22.176:31401'; // Alamat server Horizon yang dituju
 
 // --- Konfigurasi Telegram ---
-// PERHATIAN: Anda sudah memasang token dan ID Anda di sini.
-// Sangat disarankan untuk mencabut token ini dan menggunakan yang baru dari @BotFather.
 const TELEGRAM_BOT_TOKEN = '7533580803:Axxxxxxxxx';
 const TELEGRAM_CHAT_ID = '7890xxxx';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -59,7 +57,7 @@ app.use(async (req, res) => {
                               `*Metode:* \`${req.method}\`\n` +
                               `*Endpoint:* \`${req.originalUrl}\`\n` +
                               `*Timestamp:* \`${new Date().toISOString()}\`\n\n` +
-                              `Meneruskan ke Horizon Node\\.\\.\\.`;
+                              `Meneruskan ke Horizon Node\\.\\.\\.`; 
 
     sendTelegramNotification(notificationMessage)
       .catch(err => console.error('[TELEGRAM] Error tidak tertangani:', err.message));
@@ -94,7 +92,8 @@ app.use(async (req, res) => {
             statusEmoji = '✅ *Berhasil*';
             try {
                 const jsonResponse = JSON.parse(response.data);
-                resultMessage = `*Hash:* \`${jsonResponse.hash}\`\n*Ledger:* \`${jsonResponse.ledger}\``;
+                resultMessage = `*Hash:* [${jsonResponse.hash}](https://blockexplorer.minepi.com/mainnet/transactions/${jsonResponse.hash})\n` +
+                                `*Ledger:* \`${jsonResponse.ledger}\``;
             } catch (e) {
                 resultMessage = `Gagal mem\\-parsing respons JSON\\.`;
             }
