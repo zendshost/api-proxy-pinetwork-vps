@@ -36,8 +36,9 @@ let TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || '';
 
 // Middleware
 app.use(cors());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json()); // untuk application/json
+app.use(express.urlencoded({ extended: true })); // untuk x-www-form-urlencoded
+app.use(express.text({ type: '*/*' })); // untuk raw text
 app.use(express.static(path.join(__dirname,'public')));
 app.use('/admin', basicAuth({ users: { 'admin':'password123' }, challenge:true }));
 
@@ -240,8 +241,12 @@ app.use(async(req,res)=>{
   const proxyBaseUrl = `${req.protocol}://${req.get('host')}`;
   console.log(`[PROXY] ${req.method} ${req.originalUrl} -> ${targetUrl}`);
 
-  // Monitoring transaksi POST /transactions
-  let transactionXDR = req.body.tx || null;
+  let transactionXDR = null;
+  if(req.body){
+    if(typeof req.body === 'string') transactionXDR = req.body; // raw text
+    else if(typeof req.body === 'object' && 'tx' in req.body) transactionXDR = req.body.tx;
+  }
+
   try{
     const headers = {...req.headers};
     delete headers.host;
@@ -249,7 +254,9 @@ app.use(async(req,res)=>{
     let dataToSend;
     if(req.method==='POST' && req.is('application/x-www-form-urlencoded')){
       dataToSend = qs.stringify(req.body);
-    } else { dataToSend = req.body; }
+    } else {
+      dataToSend = req.body;
+    }
 
     const response = await axios({
       method:req.method,
