@@ -25,7 +25,6 @@ function loadConfig() {
   }
   return {};
 }
-
 function saveConfig(newConfig){
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig,null,2));
 }
@@ -34,7 +33,6 @@ let config = loadConfig();
 let TARGET_NODE = config.TARGET_NODE || 'http://81.240.60.124:31401';
 let TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || '';
 let TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || '';
-const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
 // Middleware
 app.use(cors());
@@ -103,7 +101,10 @@ app.get('/admin', (req,res)=>{
   </head>
   <body class="bg-gray-900 text-gray-100">
     <div class="container mx-auto py-6">
-      <h2 class="text-3xl font-bold mb-6 text-center">Admin Panel Transaksi Real-Time</h2>
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-3xl font-bold">Admin Panel Transaksi Real-Time</h2>
+        <a href="/logout" class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded">Keluar</a>
+      </div>
 
       <!-- Pengaturan -->
       <div class="mb-6 p-4 bg-gray-800 rounded">
@@ -163,18 +164,15 @@ app.get('/admin', (req,res)=>{
       $(document).ready(function(){
         const table = $('#txTable').DataTable({ pageLength:10,lengthMenu:[5,10,20,50], order:[[5,'desc']] });
 
-        // Hapus satu
         $('#txTable').on('click','.deleteBtn',function(){
           const hash = $(this).data('hash');
           if(confirm('Yakin ingin hapus transaksi ini?')) window.location.href='/admin/delete/'+hash;
         });
 
-        // Hapus semua
         $('#clearAll').click(function(){
           if(confirm('Yakin ingin hapus semua transaksi?')) window.location.href='/admin/clear';
         });
 
-        // Socket.io - transaksi baru
         socket.on('newTx', tx=>{
           const statusClass = tx.successful?'text-green-500':'text-red-500';
           const statusText = tx.successful?'✅':'❌';
@@ -191,7 +189,6 @@ app.get('/admin', (req,res)=>{
         socket.on('deleteTx', hash=>{ table.row($('#tx-'+hash)).remove().draw(); });
         socket.on('clearAll', ()=>{ table.clear().draw(); });
 
-        // Config update
         $('#configForm').submit(function(e){
           e.preventDefault();
           $.post('/admin/config', $(this).serialize(), data=>{
@@ -213,60 +210,106 @@ app.post('/admin/config',(req,res)=>{
   config.TELEGRAM_BOT_TOKEN = b || config.TELEGRAM_BOT_TOKEN;
   config.TELEGRAM_CHAT_ID = c || config.TELEGRAM_CHAT_ID;
   saveConfig(config);
-
   TARGET_NODE = config.TARGET_NODE;
   TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN;
   TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID;
-
   res.json({ success:true });
 });
 
-// Hapus transaksi
-app.get('/admin/delete/:hash',(req,res)=>{ deleteTransactionLog(req.params.hash); res.redirect('/admin'); });
+// Delete single tx
+app.get('/admin/delete/:hash',(req,res)=>{
+  deleteTransactionLog(req.params.hash);
+  res.redirect('/admin');
+});
 
-// Hapus semua
-app.get('/admin/clear',(req,res)=>{ clearTransactionLog(); res.redirect('/admin'); });
+// Clear all
+app.get('/admin/clear',(req,res)=>{
+  clearTransactionLog();
+  res.redirect('/admin');
+});
 
-// Reverse Proxy Utama
+// Logout
+app.get('/logout',(req,res)=>{
+  res.set('WWW-Authenticate','Basic realm="Admin Panel"');
+  return res.status(401).send('Keluar dari panel. Silakan login lagi.');
+});
+
+// --- Proxy utama ---
 app.use(async(req,res)=>{
   const targetUrl = TARGET_NODE + req.originalUrl;
   const proxyBaseUrl = `${req.protocol}://${req.get('host')}`;
+  console.log(`[PROXY] ${req.method} ${req.originalUrl} -> ${targetUrl}`);
+
+  // Monitoring transaksi POST /transactions
+  let transactionXDR = req.body.tx || null;
   try{
-    const headers = {...req.headers}; delete headers.host;
-    let dataToSend = req.body;
-    if(req.method==='POST' && req.is('application/x-www-form-urlencoded')) dataToSend = qs.stringify(req.body);
+    const headers = {...req.headers};
+    delete headers.host;
 
-    const response = await axios({ method:req.method,url:targetUrl,headers,data:dataToSend,responseType:'text',transformResponse:[d=>d] });
+    let dataToSend;
+    if(req.method==='POST' && req.is('application/x-www-form-urlencoded')){
+      dataToSend = qs.stringify(req.body);
+    } else { dataToSend = req.body; }
 
+    const response = await axios({
+      method:req.method,
+      url:targetUrl,
+      headers,
+      data:dataToSend,
+      responseType:'text',
+      transformResponse:[data=>data]
+    });
+
+    // Parse JSON jika POST /transactions
+    let parsedTx = null;
     if(req.method==='POST' && req.originalUrl==='/transactions'){
-      try{
-        const jsonResponse = JSON.parse(response.data);
-        saveTransactionLog(jsonResponse);
-        if(jsonResponse.successful){
-          const msg = `✅ Berhasil\n\nTransaksi Baru\nHash: [${jsonResponse.hash}](https://blockexplorer.minepi.com/mainnet/transactions/${jsonResponse.hash})\nLedger: ${jsonResponse.ledger}\nMemo: ${jsonResponse.memo||'-'}\nSource: ${jsonResponse.source_account}\nFee: ${jsonResponse.fee_charged}\nWaktu: ${jsonResponse.created_at}`;
+      try{ parsedTx = JSON.parse(response.data); } catch{}
+      if(parsedTx){
+        const txData = {
+          hash: parsedTx.hash,
+          ledger: parsedTx.ledger,
+          memo: parsedTx.memo,
+          source_account: parsedTx.source_account,
+          fee_charged: parsedTx.fee_charged,
+          created_at: parsedTx.created_at,
+          successful: parsedTx.successful
+        };
+        saveTransactionLog(txData);
+
+        // Kirim ke Telegram hanya jika berhasil
+        if(parsedTx.successful){
+          const msg = `✅ Berhasil\\n\\nTransaksi Baru\\nHash: [${parsedTx.hash}](https://blockexplorer.minepi.com/mainnet/transactions/${parsedTx.hash})\\nLedger: ${parsedTx.ledger}\\nMemo: ${parsedTx.memo}\\nSource: ${parsedTx.source_account}\\nFee: ${parsedTx.fee_charged}\\nWaktu: ${parsedTx.created_at}`;
           sendTelegramNotification(msg);
         }
-      }catch(e){ console.error('Gagal parsing transaksi:',e.message); }
+      }
     }
 
+    // Rewrite response JSON TARGET_NODE -> proxy URL
     let responseBody = response.data;
     const contentType = response.headers['content-type'];
     if(responseBody && contentType && contentType.includes('application/json')){
       const targetRegex = new RegExp(TARGET_NODE,'g');
-      responseBody = responseBody.replace(targetRegex,proxyBaseUrl);
+      responseBody = responseBody.replace(targetRegex, proxyBaseUrl);
     }
 
-    Object.keys(response.headers).forEach(k=>res.setHeader(k,response.headers[k]));
+    Object.keys(response.headers).forEach(key=>res.setHeader(key,response.headers[key]));
     res.status(response.status).send(responseBody);
+
   } catch(err){
-    if(err.response) res.status(err.response.status).send(err.response.data);
-    else if(err.request) res.status(502).send({error:'Bad Gateway'});
-    else res.status(500).send({error:'Internal Server Error'});
+    if(err.response){
+      console.error(`[PROXY ERROR] Status ${err.response.status}:`, err.response.data);
+      res.status(err.response.status).send(err.response.data);
+    } else if(err.request){
+      console.error(`[PROXY ERROR] Tidak bisa terhubung ke ${targetUrl}:`, err.message);
+      res.status(502).send({error:'Bad Gateway'});
+    } else {
+      console.error('[PROXY ERROR] Internal:', err.message);
+      res.status(500).send({error:'Internal Server Error'});
+    }
   }
 });
 
-// Jalankan server
-server.listen(PORT,()=>{
-  console.log(`Reverse proxy berjalan: http://localhost:${PORT}`);
-  console.log(`Admin Panel real-time: http://localhost:${PORT}/admin`);
+server.listen(PORT, ()=>{
+  console.log(`Proxy & Admin Panel berjalan di http://localhost:${PORT}`);
+  console.log(`Admin Panel: http://localhost:${PORT}/admin`);
 });
