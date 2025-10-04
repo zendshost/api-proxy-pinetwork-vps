@@ -34,5 +34,23 @@ ______________________________________________
 Proxy & Admin Panel berjalan di http://localhost:31401
 Admin Panel: http://localhost:31401/admin
 ______________________________________________
+Akses admin panel
+
+Buka browser: http://SERVER_IP:31401/admin
+
+Login:
+
+Username: admin
+
+Password: password123
+
+Di panel bisa:
+
+Lihat riwayat transaksi realtime
+
+Hapus 1 per 1 atau semua
+
+Ubah TARGET_NODE / BOT_TOKEN / CHAT_ID
+______________________________________________
 pm2 logs server.js
 ______________________________________________
