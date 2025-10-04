@@ -21,7 +21,7 @@ Kita butuh dua library utama:
 express: Kerangka kerja web untuk Node.js.
 Jalankan perintah ini untuk menginstalnya:
 ______________________________________________
-npm install express axios cors qs
+npm install express axios qs cors express-basic-auth socket.io
 ______________________________________________
 npm install pm2 -g
 ______________________________________________
