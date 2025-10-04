@@ -29,6 +29,8 @@ npm install pm2 -g
 ______________________________________________
 pm2 start webserver.js
 ______________________________________________
+pm2 logs server.js
+______________________________________________
 Jika berhasil, akan muncul:
 ______________________________________________
 Proxy & Admin Panel berjalan di http://localhost:31401
@@ -51,6 +53,4 @@ Lihat riwayat transaksi realtime
 Hapus 1 per 1 atau semua
 
 Ubah TARGET_NODE / BOT_TOKEN / CHAT_ID
-______________________________________________
-pm2 logs server.js
 ______________________________________________
