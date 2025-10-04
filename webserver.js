@@ -36,9 +36,9 @@ let TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || '';
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // untuk application/json
-app.use(express.urlencoded({ extended: true })); // untuk x-www-form-urlencoded
-app.use(express.text({ type: '*/*' })); // untuk raw text
+app.use(express.json()); 
+app.use(express.urlencoded({ extended: true }));
+app.use(express.text({ type: '*/*' }));
 app.use(express.static(path.join(__dirname,'public')));
 app.use('/admin', basicAuth({ users: { 'admin':'password123' }, challenge:true }));
 
@@ -137,13 +137,14 @@ app.get('/admin', (req,res)=>{
           <thead>
             <tr class="bg-gray-800 text-gray-100">
               <th>Hash</th><th>Memo</th><th>Source</th><th>Ledger</th>
-              <th>Fee</th><th>Waktu</th><th>Berhasil</th><th>Aksi</th>
+              <th>Fee</th><th>Waktu</th><th>Berhasil</th><th>Error Codes</th><th>Aksi</th>
             </tr>
           </thead>
           <tbody>
             ${logs.map(tx=>{
               const statusClass = tx.successful?'text-green-500':'text-red-500';
               const statusText = tx.successful?'✅':'❌';
+              const errorCodes = tx.result_codes ? JSON.stringify(tx.result_codes) : '-';
               return `<tr id="tx-${tx.hash}">
                 <td><a href="https://blockexplorer.minepi.com/mainnet/transactions/${tx.hash}" target="_blank" class="underline text-blue-600">${tx.hash}</a></td>
                 <td>${tx.memo||'-'}</td>
@@ -152,6 +153,7 @@ app.get('/admin', (req,res)=>{
                 <td>${tx.fee_charged||'0'}</td>
                 <td>${tx.created_at||'-'}</td>
                 <td class="${statusClass} font-bold">${statusText}</td>
+                <td>${errorCodes}</td>
                 <td><button class="deleteBtn bg-red-600 hover:bg-red-500 px-2 py-1 rounded" data-hash="${tx.hash}">Hapus</button></td>
               </tr>`;
             }).join('')}
@@ -177,11 +179,13 @@ app.get('/admin', (req,res)=>{
         socket.on('newTx', tx=>{
           const statusClass = tx.successful?'text-green-500':'text-red-500';
           const statusText = tx.successful?'✅':'❌';
+          const errorCodes = tx.result_codes ? JSON.stringify(tx.result_codes) : '-';
           const rowNode = table.row.add([
             \`<a href="https://blockexplorer.minepi.com/mainnet/transactions/\${tx.hash}" target="_blank" class="underline text-blue-600">\${tx.hash}</a>\`,
             tx.memo||'-', tx.source_account||'-', tx.ledger||'-',
             tx.fee_charged||'0', tx.created_at||'-',
             \`<span class="\${statusClass} font-bold">\${statusText}</span>\`,
+            errorCodes,
             \`<button class="deleteBtn bg-red-600 hover:bg-red-500 px-2 py-1 rounded" data-hash="\${tx.hash}">Hapus</button>\`
           ]).draw().node();
           $(rowNode).attr('id','tx-'+tx.hash);
@@ -241,12 +245,6 @@ app.use(async(req,res)=>{
   const proxyBaseUrl = `${req.protocol}://${req.get('host')}`;
   console.log(`[PROXY] ${req.method} ${req.originalUrl} -> ${targetUrl}`);
 
-  let transactionXDR = null;
-  if(req.body){
-    if(typeof req.body === 'string') transactionXDR = req.body; // raw text
-    else if(typeof req.body === 'object' && 'tx' in req.body) transactionXDR = req.body.tx;
-  }
-
   try{
     const headers = {...req.headers};
     delete headers.host;
@@ -267,25 +265,26 @@ app.use(async(req,res)=>{
       transformResponse:[data=>data]
     });
 
-    // Parse JSON jika POST /transactions
+    // --- Transaksi ---
     let parsedTx = null;
     if(req.method==='POST' && req.originalUrl==='/transactions'){
       try{ parsedTx = JSON.parse(response.data); } catch{}
       if(parsedTx){
         const txData = {
-          hash: parsedTx.hash,
+          hash: parsedTx.hash || 'FAILED_'+Date.now(),
           ledger: parsedTx.ledger,
           memo: parsedTx.memo,
           source_account: parsedTx.source_account,
           fee_charged: parsedTx.fee_charged,
-          created_at: parsedTx.created_at,
-          successful: parsedTx.successful
+          created_at: parsedTx.created_at || new Date().toISOString(),
+          successful: parsedTx.successful || false,
+          result_codes: parsedTx.extras?.result_codes || null
         };
         saveTransactionLog(txData);
 
-        // Kirim ke Telegram hanya jika berhasil
+        // Telegram hanya untuk transaksi berhasil
         if(parsedTx.successful){
-          const msg = `✅ Berhasil\\n\\nTransaksi Baru\\nHash: [${parsedTx.hash}](https://blockexplorer.minepi.com/mainnet/transactions/${parsedTx.hash})\\nLedger: ${parsedTx.ledger}\\nMemo: ${parsedTx.memo}\\nSource: ${parsedTx.source_account}\\nFee: ${parsedTx.fee_charged}\\nWaktu: ${parsedTx.created_at}`;
+          const msg = `✅ Berhasil\\n\\nTransaksi Baru\\nHash: [${txData.hash}](https://blockexplorer.minepi.com/mainnet/transactions/${txData.hash})\\nLedger: ${txData.ledger}\\nMemo: ${txData.memo || '-'}\\nSource: ${txData.source_account || '-'}\\nFee: ${txData.fee_charged || 0}\\nWaktu: ${txData.created_at}`;
           sendTelegramNotification(msg);
         }
       }
@@ -305,7 +304,26 @@ app.use(async(req,res)=>{
   } catch(err){
     if(err.response){
       console.error(`[PROXY ERROR] Status ${err.response.status}:`, err.response.data);
+
+      // Simpan transaksi gagal
+      let failedTx = null;
+      try { failedTx = typeof err.response.data === 'string' ? JSON.parse(err.response.data) : err.response.data; } catch{}
+      if(failedTx){
+        const txData = {
+          hash: failedTx.hash || 'FAILED_'+Date.now(),
+          ledger: failedTx.ledger,
+          memo: failedTx.memo,
+          source_account: failedTx.source_account,
+          fee_charged: failedTx.fee_charged,
+          created_at: new Date().toISOString(),
+          successful: false,
+          result_codes: failedTx.extras?.result_codes || null
+        };
+        saveTransactionLog(txData);
+      }
+
       res.status(err.response.status).send(err.response.data);
+
     } else if(err.request){
       console.error(`[PROXY ERROR] Tidak bisa terhubung ke ${targetUrl}:`, err.message);
       res.status(502).send({error:'Bad Gateway'});
