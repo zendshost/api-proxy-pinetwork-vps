@@ -21,11 +21,18 @@ Kita butuh dua library utama:
 express: Kerangka kerja web untuk Node.js.
 Jalankan perintah ini untuk menginstalnya:
 ______________________________________________
-npm install express axios qs cors express-basic-auth socket.io
+npm install express axios cors qs socket.io express-basic-auth datatables.net datatables.net-dt
+______________________________________________
+mkdir public
 ______________________________________________
 npm install pm2 -g
 ______________________________________________
 pm2 start server.js
+______________________________________________
+Jika berhasil, akan muncul:
+______________________________________________
+Proxy & Admin Panel berjalan di http://localhost:31401
+Admin Panel: http://localhost:31401/admin
 ______________________________________________
 pm2 logs server.js
 ______________________________________________
