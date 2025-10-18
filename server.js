@@ -10,7 +10,7 @@ const PORT = 31401;
 const TARGET_NODE = 'http://194.35.14:31401'; 
 
 // --- Konfigurasi Telegram ---
-const TELEGRAM_BOT_TOKEN = '7533580803:AAHzOcxxdffgrHiiorg8fjgZGfeiGGyf';
+const TELEGRAM_BOT_TOKEN = '7533580803:AAHzOcxxdffgrHiiorgcsfsfsffcs';
 const TELEGRAM_CHAT_ID = '7890743676';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
